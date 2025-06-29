@@ -1,0 +1,192 @@
+const express = require('express');
+
+const router = express.Router();
+
+const mongoose = require('mongoose');
+const multer = require('multer');
+
+const checkAuth = require('../middleware/check-auth');
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    console.log('here');
+    const timestamp = new Date().toISOString().replace('/:/g', '-');
+    cb(null, timestamp + '-' + file.originalname); // Add a hyphen for better readability
+  },
+});
+
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png') {
+    cb(null, true);
+  } else {
+    cb(new Error('File type not supported'), false);
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 1024 * 1024 * 5,
+  },
+  fileFilter: fileFilter,
+});
+
+const Product = require('../models/products');
+
+router.post('/', upload.single('pic'), checkAuth, async (req, res, next) => {
+  try {
+    console.log(req.body);
+    console.log('File: ' + req.file);
+
+    const product = new Product({
+      name: req.body.name,
+      price: req.body.price,
+      pic: req.file.path,
+    });
+
+    const result = await product.save(); // Wait for database operation
+    console.log(result);
+
+    return res.status(201).json({
+      // Send response only once
+      message: 'Product created successfully',
+      createdProduct: result,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message }); // Ensure error response is sent once
+  }
+});
+
+// Get all products
+router.get('/', (req, res, next) => {
+  Product.find()
+    .select('price name productImage ')
+    .exec()
+    .then((doc) => {
+      const response = {
+        count: doc.length,
+        products: doc.map((doc) => {
+          return {
+            name: doc.name,
+            price: doc.price,
+            _id: doc._id,
+            productImage: doc.productImage,
+            request: {
+              type: 'GET',
+              url: 'http://localhost:3000/products/' + doc._id,
+            },
+          };
+        }),
+      };
+      res.status(200).json(response);
+    })
+    .catch((err) => {
+      res.status(500).json({
+        error: err,
+      });
+    });
+});
+// Get product by ID
+router.get('/:productId', (req, res, next) => {
+  const id = req.params.productId;
+
+  Product.findById(id)
+    .select('name price _id productImage')
+    .exec()
+    .then((doc) => {
+      console.log(doc);
+      if (doc) {
+        res.status(200).json({
+          product: doc,
+          productImage: doc.productImage,
+          request: {
+            type: 'GET',
+            url: `http://localhost:3000/products/${doc._id}`,
+          },
+        });
+      } else {
+        res
+          .status(404)
+          .json({ message: 'No valid entry found for provided ID' });
+      }
+    })
+    .catch((err) => {
+      console.log(err);
+      res.status(500).json({ error: err });
+    });
+});
+router.delete('/:productId', (req, res, next) => {
+  const id = req.params.productId;
+
+  Product.findByIdAndDelete(id)
+    .select('name price id')
+    .exec()
+    .then((result) => {
+      res.status(200).json({
+        message: 'Product deleted successfully',
+        result: result,
+        request: {
+          type: 'GET',
+          uri: 'http//localhost:3000/products',
+        },
+      });
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).json({
+        error: err,
+      });
+    });
+});
+
+// PATCH endpoint for products
+router.patch('/:productId', (req, res) => {
+  const id = req.params.productId;
+  const updateOps = {};
+
+  // Validate req.body
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    for (const key in req.body) {
+      if (req.body.hasOwnProperty(key)) {
+        updateOps[key] = req.body[key];
+      }
+    }
+
+    // Perform the update
+    Product.updateOne({ _id: id }, { $set: updateOps })
+      .exec()
+      .then((result) => {
+        res.status(200).json({
+          status: 'success',
+          message: 'Product updated successfully',
+          data: {
+            product: result,
+            request: {
+              type: 'GET',
+              url: `http://localhost:3000/products/${id}`,
+            },
+          },
+        });
+      })
+      .catch((err) => {
+        res.status(500).json({
+          status: 'error',
+          message: 'Failed to update the product',
+          error: {
+            message: err.message,
+          },
+        });
+      });
+  } else {
+    res.status(400).json({
+      status: 'fail',
+      message: 'Invalid request body. Ensure it is a JSON object.',
+    });
+  }
+});
+
+module.exports = router;
