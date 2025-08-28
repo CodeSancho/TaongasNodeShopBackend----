@@ -11,10 +11,9 @@ const jwt = require('jsonwebtoken');
 
 // const upload = multer({dest: 'uploads/'})
 
-const uri =
-  'mongodb+srv://taomtonga7:5osbGDlKMomKRefX@nodeshop.ydwgc.mongodb.net/?retryWrites=true&w=majority&appName=nodeshop';
+
 mongoose
-  .connect(uri)
+  .connect(process.env.MONGO_URI )
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('Error connecting to MongoDB:', err));
 
@@ -55,3 +54,4 @@ app.use((error, req, res, next) => {
 });
 
 module.exports = app;
+
